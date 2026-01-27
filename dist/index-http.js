@@ -41,7 +41,7 @@ app.post("/mcp", async (req, res) => {
 app.get("/health", (req, res) => {
     res.json({ status: "ok" });
 });
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.error(`Agent Browser MCP server running on http://localhost:${PORT}/mcp`);
+const PORT = parseInt(process.env.PORT || '3000', 10);
+app.listen(PORT, '0.0.0.0', () => {
+    console.error(`Agent Browser MCP server running on http://0.0.0.0:${PORT}/mcp`);
 });
