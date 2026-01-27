@@ -1,0 +1,132 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  schedule:
+    - cron: '0 0 * * 0'  # 每周日凌晨检查更新
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild even without changes'
+        required: false
+        default: 'false'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  check-upstream-version:
+    name: Check upstream agent-browser version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check-version.outputs.version }}
+      needs_update: ${{ steps.check-version.outputs.needs_update }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check current agent-browser version
+        id: current-version
+        run: |
+          CURRENT=$(grep -oP 'agent-browser@[^"'\'']+' package.json | head -1 | cut -d'@' -f2 || echo "unknown")
+          echo "current_version=$CURRENT" >> $GITHUB_OUTPUT
+          echo "Current agent-browser version: $CURRENT"
+
+      - name: Get latest upstream version
+        id: upstream-version
+        run: |
+          LATEST=$(npm view agent-browser version 2>/dev/null || echo "unknown")
+          echo "upstream_version=$LATEST" >> $GITHUB_OUTPUT
+          echo "Latest agent-browser version: $LATEST"
+
+      - name: Compare versions
+        id: check-version
+        run: |
+          CURRENT="${{ steps.current-version.outputs.current_version }}"
+          LATEST="${{ steps.upstream-version.outputs.upstream_version }}"
+          echo "Comparing: current=$CURRENT, latest=$LATEST"
+          
+          if [ "$CURRENT" != "$LATEST" ]; then
+            echo "needs_update=true" >> $GITHUB_OUTPUT
+            echo "version=$LATEST" >> $GITHUB_OUTPUT
+            echo "New version available: $LATEST (current: $CURRENT)"
+          else
+            echo "needs_update=false" >> $GITHUB_OUTPUT
+            echo "version=$CURRENT" >> $GITHUB_OUTPUT
+            echo "Already at latest version: $CURRENT"
+          fi
+
+  build:
+    name: Build and Push Docker Image
+    needs: check-upstream-version
+    if: github.event_name == 'workflow_dispatch' || needs.check-upstream-version.outputs.needs_update == 'true' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ needs.check-upstream-version.outputs.version }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            AGENT_BROWSER_VERSION=${{ needs.check-upstream-version.outputs.version }}
+
+      - name: Create release tag if needed
+        if: github.event_name == 'release'
+        run: |
+          echo "Release ${{ github.event.release.tag_name }} published"
+          echo "Docker image pushed: ${{ steps.meta.outputs.tags }}"
+
+  notify:
+    name: Notify on update
+    needs: build
+    if: needs.check-upstream-version.outputs.needs_update == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Issue for version update
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `agent-browser 更新至 v${process.env.NEW_VERSION}`,
+              body: `检测到 **agent-browser** 有新版本可用。\n\n当前镜像已更新至: **v${process.env.NEW_VERSION}**\n\n请更新容器镜像以获取最新功能。`,
+              labels: ['version-update', 'automated']
+            })
+        env:
+          NEW_VERSION: ${{ needs.check-upstream-version.outputs.version }}
