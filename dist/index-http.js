@@ -11,43 +11,36 @@ const server = new McpServer({
 registerBrowserTools(server);
 const app = express();
 app.use(express.json());
-const transports = {};
+// Store transports by session ID
+const transports = new Map();
 app.post("/mcp", async (req, res) => {
     const sessionId = req.headers['mcp-session-id'];
     let transport;
-    console.error(`[MCP] Request received: sessionId=${sessionId}, method=${req.body?.method}`);
-    if (sessionId && transports[sessionId]) {
-        transport = transports[sessionId];
-        console.error(`[MCP] Using existing session: ${sessionId}`);
+    // If we have a session ID, use existing transport
+    if (sessionId && transports.has(sessionId)) {
+        transport = transports.get(sessionId);
     }
+    // If no session ID and this is an initialize request, create new transport
     else if (!sessionId && isInitializeRequest(req.body)) {
-        console.error(`[MCP] New session initialization`);
         transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => Math.random().toString(36).substring(7),
             onsessioninitialized: (newSessionId) => {
-                console.error(`[MCP] Session initialized: ${newSessionId}`);
-                transports[newSessionId] = transport;
+                transports.set(newSessionId, transport);
             },
         });
         transport.onclose = () => {
-            console.error(`[MCP] Session closed: ${transport.sessionId}`);
-            if (transport.sessionId) {
-                delete transports[transport.sessionId];
-            }
+            transports.delete(transport.sessionId);
         };
         transport.onerror = (error) => {
-            console.error(`[MCP] Transport error:`, error);
+            console.error(`[MCP] Transport error: ${error}`);
         };
         await server.connect(transport);
-        console.error(`[MCP] Server connected for new session`);
     }
     else {
-        console.error(`[MCP] Invalid request: sessionId=${sessionId}, isInitialize=${isInitializeRequest(req.body)}`);
         res.status(400).json({ error: "Invalid request: missing or invalid session ID" });
         return;
     }
     await transport.handleRequest(req, res, req.body);
-    console.error(`[MCP] Request handled`);
 });
 app.get("/health", (req, res) => {
     res.json({ status: "ok" });
