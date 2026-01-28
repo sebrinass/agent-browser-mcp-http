@@ -19,6 +19,15 @@ app.use(express.json());
 // Store transports by session ID
 const transports: Map<string, StreamableHTTPServerTransport> = new Map();
 
+// Fix Accept header for Meta-MCP proxy compatibility
+app.use("/mcp", (req, res, next) => {
+  const accept = req.headers.accept;
+  if (!accept || accept === "*/*") {
+    req.headers.accept = "application/json, text/event-stream";
+  }
+  next();
+});
+
 app.post("/mcp", async (req, res) => {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
   let transport: StreamableHTTPServerTransport;
