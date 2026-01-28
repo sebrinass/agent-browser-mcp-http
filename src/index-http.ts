@@ -60,6 +60,10 @@ app.post("/mcp", async (req, res) => {
     return;
   }
 
+  // Fix Accept header before handleRequest for Meta-MCP proxy compatibility
+  if (!req.headers.accept || req.headers.accept === "*/*") {
+    req.headers.accept = "application/json, text/event-stream";
+  }
   await transport.handleRequest(req, res, req.body);
 });
 
