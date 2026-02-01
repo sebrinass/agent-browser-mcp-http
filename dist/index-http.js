@@ -13,6 +13,14 @@ const app = express();
 app.use(express.json());
 // Store transports by session ID
 const transports = new Map();
+// Fix Accept header for Meta-MCP proxy compatibility
+app.use("/mcp", (req, res, next) => {
+    const accept = req.headers.accept;
+    if (!accept || accept === "*/*") {
+        req.headers.accept = "application/json, text/event-stream";
+    }
+    next();
+});
 app.post("/mcp", async (req, res) => {
     const sessionId = req.headers['mcp-session-id'];
     let transport;
@@ -39,6 +47,10 @@ app.post("/mcp", async (req, res) => {
     else {
         res.status(400).json({ error: "Invalid request: missing or invalid session ID" });
         return;
+    }
+    // Fix Accept header before handleRequest for Meta-MCP proxy compatibility
+    if (!req.headers.accept || req.headers.accept === "*/*") {
+        req.headers.accept = "application/json, text/event-stream";
     }
     await transport.handleRequest(req, res, req.body);
 });

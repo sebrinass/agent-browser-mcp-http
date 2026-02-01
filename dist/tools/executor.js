@@ -23,17 +23,13 @@ export async function execBrowser(command, options = {}, sessionId) {
         is_checked: "is checked",
         wait_for_selector: "wait",
         wait_for_navigation: "wait",
-        new_session: "session",
         close_session: "close",
         go_back: "back",
         go_forward: "forward",
+        evaluate: "eval", // Fix: evaluate -> eval
     };
     const actualCommand = commandMap[command] || command;
     const args = actualCommand.split(" ");
-    // Add session ID if provided
-    if (sessionId) {
-        args.push("--session", sessionId);
-    }
     // Define which parameters should be positional arguments for each command
     const positionalParams = {
         open: ["url"],
@@ -49,7 +45,7 @@ export async function execBrowser(command, options = {}, sessionId) {
         scroll: ["direction"],
         screenshot: ["path"],
         pdf: ["path"],
-        evaluate: ["script"],
+        eval: ["script"], // Note: use "eval" not "evaluate"
         wait: ["selector"],
         "get text": ["selector"],
         "get html": ["selector"],
@@ -63,9 +59,14 @@ export async function execBrowser(command, options = {}, sessionId) {
     // Add positional arguments first
     for (const key of positionalKeys) {
         if (options[key] !== undefined && options[key] !== null) {
-            args.push(String(options[key]));
+            const value = String(options[key]);
+            args.push(value);
             addedPositional.add(key);
         }
+    }
+    // Add session ID if provided (after positional args for eval command)
+    if (sessionId) {
+        args.push("--session", sessionId);
     }
     // Add remaining options as flags
     for (const [key, value] of Object.entries(options)) {

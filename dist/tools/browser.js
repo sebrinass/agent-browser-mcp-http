@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { execBrowser } from "./executor.js";
+import { randomUUID } from "crypto";
 export function registerBrowserTools(server) {
     // Navigation Tools
     server.tool("browser_navigate", "Navigate to a URL in the browser", {
@@ -232,9 +233,18 @@ export function registerBrowserTools(server) {
             height: z.number().describe("Viewport height in pixels"),
         }).optional().describe("Viewport size configuration"),
     }, async ({ viewport }) => {
-        const result = await execBrowser("new_session", { viewport });
+        // Generate a unique session ID
+        const sessionId = randomUUID();
+        // Initialize the session by running a simple command
+        // This creates the browser instance for this session
+        try {
+            await execBrowser("get_title", {}, sessionId);
+        }
+        catch {
+            // Session initialized (browser may not be open yet, which is fine)
+        }
         return {
-            content: [{ type: "text", text: result }],
+            content: [{ type: "text", text: sessionId }],
         };
     });
     server.tool("browser_close_session", "Close a browser session", {
