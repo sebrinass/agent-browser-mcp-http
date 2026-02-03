@@ -1,16 +1,33 @@
 import { z } from "zod";
 import { execBrowser } from "./executor.js";
 import { randomUUID } from "crypto";
+import { logger } from "../utils/logger.js";
+// 包装工具执行，添加日志记录
+async function executeTool(toolName, params, execFn, sessionId) {
+    logger.info(`Tool called: ${toolName}`, { params }, sessionId);
+    const startTime = Date.now();
+    try {
+        const result = await execFn();
+        const duration = Date.now() - startTime;
+        logger.info(`Tool ${toolName} completed in ${duration}ms`, { resultLength: result.length }, sessionId);
+        return {
+            content: [{ type: "text", text: result }],
+        };
+    }
+    catch (error) {
+        const duration = Date.now() - startTime;
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.error(`Tool ${toolName} failed after ${duration}ms`, error instanceof Error ? error : new Error(errorMsg), { params }, sessionId);
+        throw error;
+    }
+}
 export function registerBrowserTools(server) {
     // Navigation Tools
     server.tool("browser_navigate", "Navigate to a URL in the browser", {
         url: z.string().url().describe("The URL to navigate to"),
         sessionId: z.string().optional().describe("Browser session ID for isolation"),
     }, async ({ url, sessionId }) => {
-        const result = await execBrowser("navigate", { url }, sessionId);
-        return {
-            content: [{ type: "text", text: result }],
-        };
+        return executeTool("browser_navigate", { url, sessionId }, () => execBrowser("navigate", { url }, sessionId), sessionId);
     });
     server.tool("browser_go_back", "Navigate back in browser history", {
         sessionId: z.string().optional().describe("Browser session ID"),
@@ -37,27 +54,21 @@ export function registerBrowserTools(server) {
         };
     });
     // Interaction Tools
-    server.tool("browser_click", "Click on an element identified by selector or accessibility properties", {
-        selector: z.string().describe("CSS selector, text content, or accessibility locator"),
+    server.tool("browser_click", "Click on an element. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, sessionId }) => {
-        const result = await execBrowser("click", { selector }, sessionId);
-        return {
-            content: [{ type: "text", text: result }],
-        };
+        return executeTool("browser_click", { selector, sessionId }, () => execBrowser("click", { selector }, sessionId), sessionId);
     });
-    server.tool("browser_fill", "Fill a text input field with the specified value", {
-        selector: z.string().describe("Selector for the input element"),
+    server.tool("browser_fill", "Fill a text input field. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
         value: z.string().describe("Text value to fill in"),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, value, sessionId }) => {
-        const result = await execBrowser("fill", { selector, value }, sessionId);
-        return {
-            content: [{ type: "text", text: result }],
-        };
+        return executeTool("browser_fill", { selector, value, sessionId }, () => execBrowser("fill", { selector, value }, sessionId), sessionId);
     });
-    server.tool("browser_type", "Type text character by character (useful for triggering key events)", {
-        selector: z.string().describe("Selector for the input element"),
+    server.tool("browser_type", "Type text character by character. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
         text: z.string().describe("Text to type"),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, text, sessionId }) => {
@@ -66,8 +77,8 @@ export function registerBrowserTools(server) {
             content: [{ type: "text", text: result }],
         };
     });
-    server.tool("browser_hover", "Hover over an element", {
-        selector: z.string().describe("Selector for the element to hover"),
+    server.tool("browser_hover", "Hover over an element. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, sessionId }) => {
         const result = await execBrowser("hover", { selector }, sessionId);
@@ -86,8 +97,8 @@ export function registerBrowserTools(server) {
             content: [{ type: "text", text: result }],
         };
     });
-    server.tool("browser_select", "Select an option from a dropdown", {
-        selector: z.string().describe("Selector for the select element"),
+    server.tool("browser_select", "Select an option from a dropdown. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
         value: z.string().describe("Value or label of the option to select"),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, value, sessionId }) => {
@@ -96,8 +107,8 @@ export function registerBrowserTools(server) {
             content: [{ type: "text", text: result }],
         };
     });
-    server.tool("browser_check", "Check a checkbox or radio button", {
-        selector: z.string().describe("Selector for the checkbox/radio element"),
+    server.tool("browser_check", "Check a checkbox or radio button. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, sessionId }) => {
         const result = await execBrowser("check", { selector }, sessionId);
@@ -105,8 +116,8 @@ export function registerBrowserTools(server) {
             content: [{ type: "text", text: result }],
         };
     });
-    server.tool("browser_uncheck", "Uncheck a checkbox", {
-        selector: z.string().describe("Selector for the checkbox element"),
+    server.tool("browser_uncheck", "Uncheck a checkbox. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, sessionId }) => {
         const result = await execBrowser("uncheck", { selector }, sessionId);
@@ -124,8 +135,8 @@ export function registerBrowserTools(server) {
         };
     });
     // Information Retrieval Tools
-    server.tool("browser_get_text", "Get text content from an element or the entire page", {
-        selector: z.string().optional().describe("Selector for the element (gets full page text if not provided)"),
+    server.tool("browser_get_text", "Get text content from an element or the entire page. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().optional().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results. Omit to get full page text."),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, sessionId }) => {
         const result = await execBrowser("get_text", { selector }, sessionId);
@@ -133,8 +144,8 @@ export function registerBrowserTools(server) {
             content: [{ type: "text", text: result }],
         };
     });
-    server.tool("browser_get_html", "Get HTML content from an element or the entire page", {
-        selector: z.string().optional().describe("Selector for the element (gets full page HTML if not provided)"),
+    server.tool("browser_get_html", "Get HTML content from an element or the entire page. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().optional().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results. Omit to get full page HTML."),
         outer: z.boolean().optional().describe("Get outer HTML instead of inner HTML"),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, outer, sessionId }) => {
@@ -143,8 +154,8 @@ export function registerBrowserTools(server) {
             content: [{ type: "text", text: result }],
         };
     });
-    server.tool("browser_get_attribute", "Get an attribute value from an element", {
-        selector: z.string().describe("Selector for the element"),
+    server.tool("browser_get_attribute", "Get an attribute value from an element. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
         attribute: z.string().describe("Name of the attribute to get"),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, attribute, sessionId }) => {
@@ -178,8 +189,8 @@ export function registerBrowserTools(server) {
         };
     });
     // Element State Tools
-    server.tool("browser_is_visible", "Check if an element is visible", {
-        selector: z.string().describe("Selector for the element"),
+    server.tool("browser_is_visible", "Check if an element is visible. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, sessionId }) => {
         const result = await execBrowser("is_visible", { selector }, sessionId);
@@ -187,8 +198,8 @@ export function registerBrowserTools(server) {
             content: [{ type: "text", text: result }],
         };
     });
-    server.tool("browser_is_enabled", "Check if an element is enabled", {
-        selector: z.string().describe("Selector for the element"),
+    server.tool("browser_is_enabled", "Check if an element is enabled. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, sessionId }) => {
         const result = await execBrowser("is_enabled", { selector }, sessionId);
@@ -196,8 +207,8 @@ export function registerBrowserTools(server) {
             content: [{ type: "text", text: result }],
         };
     });
-    server.tool("browser_is_checked", "Check if a checkbox/radio is checked", {
-        selector: z.string().describe("Selector for the checkbox/radio element"),
+    server.tool("browser_is_checked", "Check if a checkbox/radio is checked. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ selector, sessionId }) => {
         const result = await execBrowser("is_checked", { selector }, sessionId);
@@ -206,9 +217,9 @@ export function registerBrowserTools(server) {
         };
     });
     // Screenshot and PDF Tools
-    server.tool("browser_screenshot", "Take a screenshot of the page or an element", {
+    server.tool("browser_screenshot", "Take a screenshot of the page or an element. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
         path: z.string().optional().describe("File path to save the screenshot"),
-        selector: z.string().optional().describe("Selector for element to screenshot (full page if not provided)"),
+        selector: z.string().optional().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results. Omit for full page."),
         fullPage: z.boolean().optional().describe("Capture the full scrollable page"),
         sessionId: z.string().optional().describe("Browser session ID"),
     }, async ({ path, selector, fullPage, sessionId }) => {
@@ -235,13 +246,16 @@ export function registerBrowserTools(server) {
     }, async ({ viewport }) => {
         // Generate a unique session ID
         const sessionId = randomUUID();
+        logger.info("Creating new browser session", { viewport }, sessionId);
         // Initialize the session by running a simple command
         // This creates the browser instance for this session
         try {
             await execBrowser("get_title", {}, sessionId);
+            logger.info("New session created successfully", { sessionId }, sessionId);
         }
-        catch {
+        catch (error) {
             // Session initialized (browser may not be open yet, which is fine)
+            logger.debug("Session initialization (browser not open yet)", { error }, sessionId);
         }
         return {
             content: [{ type: "text", text: sessionId }],
@@ -256,8 +270,8 @@ export function registerBrowserTools(server) {
         };
     });
     // Wait Tools
-    server.tool("browser_wait_for_selector", "Wait for an element to appear in the page", {
-        selector: z.string().describe("Selector to wait for"),
+    server.tool("browser_wait_for_selector", "Wait for an element to appear in the page. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.", {
+        selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
         timeout: z.number().optional().describe("Maximum wait time in milliseconds"),
         state: z.enum(["attached", "detached", "visible", "hidden"]).optional().describe("Element state to wait for"),
         sessionId: z.string().optional().describe("Browser session ID"),

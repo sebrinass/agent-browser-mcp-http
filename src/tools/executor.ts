@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import { logger } from "../utils/logger.js";
 
 // Environment variable for agent-browser executable path
 const AGENT_BROWSER_PATH = process.env.AGENT_BROWSER_PATH || "agent-browser";
@@ -101,6 +102,10 @@ export async function execBrowser(
     }
   }
 
+  // 记录命令执行开始
+  logger.logCommand(actualCommand, args, sessionId, options);
+  const startTime = Date.now();
+
   return new Promise((resolve, reject) => {
     const proc = spawn(AGENT_BROWSER_PATH, args, {
       env: {
@@ -119,17 +124,54 @@ export async function execBrowser(
 
     proc.stderr.on("data", (data) => {
       stderr += data.toString();
+      // 实时记录 stderr 输出（调试级别）
+      logger.debug(`agent-browser stderr: ${data.toString().trim()}`, undefined, sessionId);
     });
 
     proc.on("close", (code) => {
+      const duration = Date.now() - startTime;
+      
       if (code === 0) {
+        // 记录成功结果
+        logger.logCommandResult(
+          actualCommand, 
+          duration, 
+          true, 
+          stdout.trim(), 
+          undefined, 
+          sessionId
+        );
         resolve(stdout.trim() || "Command executed successfully");
       } else {
-        reject(new Error(`agent-browser exited with code ${code}: ${stderr || stdout}`));
+        const errorMsg = stderr || stdout || "Unknown error";
+        // 记录失败结果
+        logger.logCommandResult(
+          actualCommand, 
+          duration, 
+          false, 
+          undefined, 
+          errorMsg, 
+          sessionId
+        );
+        logger.error(
+          `Command failed with exit code ${code}`,
+          new Error(errorMsg),
+          { command: actualCommand, args },
+          sessionId
+        );
+        reject(new Error(`agent-browser exited with code ${code}: ${errorMsg}`));
       }
     });
 
     proc.on("error", (err) => {
+      const duration = Date.now() - startTime;
+      logger.logCommandResult(actualCommand, duration, false, undefined, err.message, sessionId);
+      logger.error(
+        "Failed to spawn agent-browser process",
+        err,
+        { command: actualCommand, args, executable: AGENT_BROWSER_PATH },
+        sessionId
+      );
       reject(new Error(`Failed to execute agent-browser: ${err.message}`));
     });
   });
