@@ -255,9 +255,9 @@ export function registerBrowserTools(server: McpServer): void {
 
   server.tool(
     "browser_get_html",
-    "Get HTML content from an element or the entire page. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.",
+    "Get HTML content from an element or the entire page. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction. NOTE: selector parameter is REQUIRED for element HTML. To get full page HTML, use browser_evaluate instead.",
     {
-      selector: z.string().optional().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results. Omit to get full page HTML."),
+      selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results. REQUIRED parameter - this tool requires a selector to get HTML from a specific element."),
       outer: z.boolean().optional().describe("Get outer HTML instead of inner HTML"),
       sessionId: z.string().optional().describe("Browser session ID"),
     },
@@ -454,9 +454,9 @@ export function registerBrowserTools(server: McpServer): void {
   // Wait Tools
   server.tool(
     "browser_wait_for_selector",
-    "Wait for an element to appear in the page. IMPORTANT: Use browser_snapshot first to get element refs, then use the ref (e.g., '@e12') for reliable interaction.",
+    "Wait for an element to appear in the page. IMPORTANT: This tool only supports CSS selectors (e.g., '#id', '.class'), NOT ref selectors (e.g., '@e12'). Use browser_snapshot first to find the correct CSS selector for your target element.",
     {
-      selector: z.string().describe("Element reference from snapshot (e.g., '@e12') or CSS selector (e.g., '#id', '.class'). Must use ref format '@eN' for best results."),
+      selector: z.string().describe("CSS selector for the element (e.g., '#id', '.class'). NOTE: Ref selectors like '@e12' are NOT supported - use CSS selector only."),
       timeout: z.number().optional().describe("Maximum wait time in milliseconds"),
       state: z.enum(["attached", "detached", "visible", "hidden"]).optional().describe("Element state to wait for"),
       sessionId: z.string().optional().describe("Browser session ID"),
