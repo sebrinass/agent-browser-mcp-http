@@ -81,6 +81,11 @@ docker run -d --name agent-browser-mcp \
 - `browser_screenshot` - 截图
 - `browser_pdf` - 生成当前页面的 PDF
 
+### 下载
+
+- `browser_download` - 点击元素触发下载并保存文件
+- `browser_wait_for_download` - 等待下载完成（被动模式）
+
 完整工具列表和参数请参考 [官方文档](https://github.com/vercel-labs/agent-browser)。
 
 ## Docker 部署

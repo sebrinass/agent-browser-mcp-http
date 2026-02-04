@@ -3,6 +3,50 @@ import { logger } from "../utils/logger.js";
 // Environment variable for agent-browser executable path
 const AGENT_BROWSER_PATH = process.env.AGENT_BROWSER_PATH || "agent-browser";
 /**
+ * Execute a command with agent-browser
+ */
+function executeCommand(args, sessionId, logCommand) {
+    const actualCommand = logCommand || args[0];
+    logger.logCommand(actualCommand, args, sessionId, {});
+    const startTime = Date.now();
+    return new Promise((resolve, reject) => {
+        const proc = spawn(AGENT_BROWSER_PATH, args, {
+            env: {
+                ...process.env,
+                ...(sessionId && { AGENT_BROWSER_SESSION: sessionId }),
+            },
+        });
+        let stdout = "";
+        let stderr = "";
+        proc.stdout.on("data", (data) => {
+            stdout += data.toString();
+        });
+        proc.stderr.on("data", (data) => {
+            stderr += data.toString();
+            logger.debug(`agent-browser stderr: ${data.toString().trim()}`, undefined, sessionId);
+        });
+        proc.on("close", (code) => {
+            const duration = Date.now() - startTime;
+            if (code === 0) {
+                logger.logCommandResult(actualCommand, duration, true, stdout.trim(), undefined, sessionId);
+                resolve(stdout.trim() || "Command executed successfully");
+            }
+            else {
+                const errorMsg = stderr || stdout || "Unknown error";
+                logger.logCommandResult(actualCommand, duration, false, undefined, errorMsg, sessionId);
+                logger.error(`Command failed with exit code ${code}`, new Error(errorMsg), { command: actualCommand, args }, sessionId);
+                reject(new Error(`agent-browser exited with code ${code}: ${errorMsg}`));
+            }
+        });
+        proc.on("error", (err) => {
+            const duration = Date.now() - startTime;
+            logger.logCommandResult(actualCommand, duration, false, undefined, err.message, sessionId);
+            logger.error("Failed to spawn agent-browser process", err, { command: actualCommand, args, executable: AGENT_BROWSER_PATH }, sessionId);
+            reject(new Error(`Failed to execute agent-browser: ${err.message}`));
+        });
+    });
+}
+/**
  * Execute an agent-browser command and return the result
  */
 export async function execBrowser(command, options = {}, sessionId) {
@@ -24,11 +68,26 @@ export async function execBrowser(command, options = {}, sessionId) {
         is_checked: "is checked",
         wait_for_selector: "wait",
         wait_for_navigation: "wait",
+        wait_for_download: "wait",
         close_session: "close",
         go_back: "back",
         go_forward: "forward",
-        evaluate: "eval", // Fix: evaluate -> eval
+        evaluate: "eval",
     };
+    // Special handling for waitfordownload - it needs custom argument construction
+    if (command === "waitfordownload") {
+        const args = ["wait", "--download"];
+        if (options.path) {
+            args.push(String(options.path));
+        }
+        if (options.timeout) {
+            args.push("--timeout", String(options.timeout));
+        }
+        if (sessionId) {
+            args.push("--session", sessionId);
+        }
+        return executeCommand(args, sessionId, "waitfordownload");
+    }
     const actualCommand = commandMap[command] || command;
     const args = actualCommand.split(" ");
     // Define which parameters should be positional arguments for each command
@@ -46,8 +105,9 @@ export async function execBrowser(command, options = {}, sessionId) {
         scroll: ["direction"],
         screenshot: ["path"],
         pdf: ["path"],
-        eval: ["script"], // Note: use "eval" not "evaluate"
+        eval: ["script"],
         wait: ["selector"],
+        download: ["selector", "path"],
         "get text": ["selector"],
         "get html": ["selector"],
         "get attr": ["selector", "attribute"],
@@ -65,7 +125,7 @@ export async function execBrowser(command, options = {}, sessionId) {
             addedPositional.add(key);
         }
     }
-    // Add session ID if provided (after positional args for eval command)
+    // Add session ID if provided
     if (sessionId) {
         args.push("--session", sessionId);
     }
@@ -88,49 +148,7 @@ export async function execBrowser(command, options = {}, sessionId) {
             args.push(flag, String(value));
         }
     }
-    // 记录命令执行开始
-    logger.logCommand(actualCommand, args, sessionId, options);
-    const startTime = Date.now();
-    return new Promise((resolve, reject) => {
-        const proc = spawn(AGENT_BROWSER_PATH, args, {
-            env: {
-                ...process.env,
-                // Ensure session is isolated if sessionId is provided
-                ...(sessionId && { AGENT_BROWSER_SESSION: sessionId }),
-            },
-        });
-        let stdout = "";
-        let stderr = "";
-        proc.stdout.on("data", (data) => {
-            stdout += data.toString();
-        });
-        proc.stderr.on("data", (data) => {
-            stderr += data.toString();
-            // 实时记录 stderr 输出（调试级别）
-            logger.debug(`agent-browser stderr: ${data.toString().trim()}`, undefined, sessionId);
-        });
-        proc.on("close", (code) => {
-            const duration = Date.now() - startTime;
-            if (code === 0) {
-                // 记录成功结果
-                logger.logCommandResult(actualCommand, duration, true, stdout.trim(), undefined, sessionId);
-                resolve(stdout.trim() || "Command executed successfully");
-            }
-            else {
-                const errorMsg = stderr || stdout || "Unknown error";
-                // 记录失败结果
-                logger.logCommandResult(actualCommand, duration, false, undefined, errorMsg, sessionId);
-                logger.error(`Command failed with exit code ${code}`, new Error(errorMsg), { command: actualCommand, args }, sessionId);
-                reject(new Error(`agent-browser exited with code ${code}: ${errorMsg}`));
-            }
-        });
-        proc.on("error", (err) => {
-            const duration = Date.now() - startTime;
-            logger.logCommandResult(actualCommand, duration, false, undefined, err.message, sessionId);
-            logger.error("Failed to spawn agent-browser process", err, { command: actualCommand, args, executable: AGENT_BROWSER_PATH }, sessionId);
-            reject(new Error(`Failed to execute agent-browser: ${err.message}`));
-        });
-    });
+    return executeCommand(args, sessionId, actualCommand);
 }
 /**
  * Check if agent-browser is available
